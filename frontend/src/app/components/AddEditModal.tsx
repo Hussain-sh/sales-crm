@@ -44,13 +44,17 @@ const initialValues: LeadFormValues = {
 const stageOptions = [
   { value: "new", label: "New" },
   { value: "contacted", label: "Contacted" },
-  { value: "qualified", label: "Qualified" },
-  { value: "proposal", label: "Proposal" },
+  { value: "interested", label: "Interested" },
+  { value: "negotiation", label: "Negotiation" },
   { value: "closed", label: "Closed" },
   { value: "lost", label: "Lost" },
 ];
 
-export default function AddEditModal({ open, onClose, lead }: AddEditModalProps) {
+export default function AddEditModal({
+  open,
+  onClose,
+  lead,
+}: AddEditModalProps) {
   const queryClient = useQueryClient();
   const isEditMode = Boolean(lead);
 
@@ -79,6 +83,7 @@ export default function AddEditModal({ open, onClose, lead }: AddEditModalProps)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["leads"] });
+      queryClient.invalidateQueries({ queryKey: ["focus-list"] });
       formik.resetForm();
       onClose();
     },

@@ -2,12 +2,18 @@
 
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
+import NoteAddIcon from "@mui/icons-material/NoteAdd";
+import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import {
   Alert,
   Box,
   Chip,
   CircularProgress,
   IconButton,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
   Paper,
   Table,
   TableBody,
@@ -18,21 +24,29 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import MoreVertIcon from "@mui/icons-material/MoreVert";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { MouseEvent, useState } from "react";
 
 import api from "@/services/api";
-import { Lead } from "@/types/lead";
+import { Lead, LeadSummary } from "@/types/lead";
 
 import ConfirmationDialog from "./ConfirmationDialog";
+import FollowUpModal from "./FollowUpModal";
 
 type LeadTableProps = {
   onEdit: (lead: Lead) => void;
+  onAddInteraction: (lead: LeadSummary) => void;
 };
 
-export default function LeadTable({ onEdit }: LeadTableProps) {
+export default function LeadTable({ onEdit, onAddInteraction }: LeadTableProps) {
   const queryClient = useQueryClient();
   const [leadToDelete, setLeadToDelete] = useState<Lead | null>(null);
+  const [followUpLead, setFollowUpLead] = useState<LeadSummary | null>(null);
+  const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null);
+  const [menuLead, setMenuLead] = useState<Lead | null>(null);
+  const [scoringLeadId, setScoringLeadId] = useState<string | null>(null);
+  const isMenuOpen = Boolean(menuAnchorEl);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["leads"],
@@ -49,7 +63,25 @@ export default function LeadTable({ onEdit }: LeadTableProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["leads"] });
+      queryClient.invalidateQueries({ queryKey: ["focus-list"] });
       setLeadToDelete(null);
+    },
+  });
+
+  const recalculateScoreMutation = useMutation({
+    mutationFn: async (leadId: string) => {
+      setScoringLeadId(leadId);
+
+      const response = await api.post(`/leads/${leadId}/recalculate-score`);
+
+      return response.data.lead;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["leads"] });
+      queryClient.invalidateQueries({ queryKey: ["focus-list"] });
+    },
+    onSettled: () => {
+      setScoringLeadId(null);
     },
   });
 
@@ -68,6 +100,38 @@ export default function LeadTable({ onEdit }: LeadTableProps) {
 
     deleteMutation.reset();
     setLeadToDelete(null);
+  };
+
+  const handleOpenMenu = (
+    event: MouseEvent<HTMLButtonElement>,
+    lead: Lead
+  ) => {
+    event.stopPropagation();
+    setMenuAnchorEl(event.currentTarget);
+    setMenuLead(lead);
+  };
+
+  const handleCloseMenu = () => {
+    setMenuAnchorEl(null);
+    setMenuLead(null);
+  };
+
+  const handleRecalculateScore = () => {
+    if (!menuLead) {
+      return;
+    }
+
+    recalculateScoreMutation.mutate(menuLead.id);
+    handleCloseMenu();
+  };
+
+  const handleGenerateFollowUp = () => {
+    if (!menuLead) {
+      return;
+    }
+
+    setFollowUpLead(menuLead);
+    handleCloseMenu();
   };
 
   if (isLoading) {
@@ -93,6 +157,12 @@ export default function LeadTable({ onEdit }: LeadTableProps) {
       {deleteMutation.isError && (
         <Alert severity="error" sx={{ mt: 3 }}>
           Failed to delete lead
+        </Alert>
+      )}
+
+      {recalculateScoreMutation.isError && (
+        <Alert severity="error" sx={{ mt: 3 }}>
+          Failed to recalculate lead score
         </Alert>
       )}
 
@@ -195,6 +265,7 @@ export default function LeadTable({ onEdit }: LeadTableProps) {
                     <IconButton
                       aria-label={`Edit ${lead.name}`}
                       size="small"
+                      disabled={scoringLeadId === lead.id}
                       onClick={(event) => {
                         event.stopPropagation();
                         onEdit(lead);
@@ -204,11 +275,26 @@ export default function LeadTable({ onEdit }: LeadTableProps) {
                     </IconButton>
                   </Tooltip>
 
+                  <Tooltip title="Add interaction">
+                    <IconButton
+                      aria-label={`Add interaction for ${lead.name}`}
+                      size="small"
+                      disabled={scoringLeadId === lead.id}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onAddInteraction(lead);
+                      }}
+                    >
+                      <NoteAddIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+
                   <Tooltip title="Delete lead">
                     <IconButton
                       aria-label={`Delete ${lead.name}`}
                       size="small"
                       color="error"
+                      disabled={scoringLeadId === lead.id}
                       onClick={(event) => {
                         event.stopPropagation();
                         setLeadToDelete(lead);
@@ -217,6 +303,25 @@ export default function LeadTable({ onEdit }: LeadTableProps) {
                       <DeleteIcon fontSize="small" />
                     </IconButton>
                   </Tooltip>
+
+                  {lead.last_interaction_at && (
+                    <Tooltip title="AI actions">
+                      <span>
+                        <IconButton
+                          aria-label={`AI actions for ${lead.name}`}
+                          size="small"
+                          disabled={scoringLeadId === lead.id}
+                          onClick={(event) => handleOpenMenu(event, lead)}
+                        >
+                          {scoringLeadId === lead.id ? (
+                            <CircularProgress size={18} />
+                          ) : (
+                            <MoreVertIcon fontSize="small" />
+                          )}
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -233,6 +338,47 @@ export default function LeadTable({ onEdit }: LeadTableProps) {
         isDeleting={deleteMutation.isPending}
         onCancel={handleCancelDelete}
         onDelete={handleDelete}
+      />
+
+      <Menu
+        anchorEl={menuAnchorEl}
+        open={isMenuOpen}
+        onClose={handleCloseMenu}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        transformOrigin={{ vertical: "top", horizontal: "right" }}
+      >
+        <MenuItem
+          disabled={!menuLead || scoringLeadId === menuLead.id}
+          onClick={handleRecalculateScore}
+        >
+          <ListItemIcon>
+            {menuLead && scoringLeadId === menuLead.id ? (
+              <CircularProgress size={18} />
+            ) : (
+              <AutoAwesomeIcon fontSize="small" />
+            )}
+          </ListItemIcon>
+          <ListItemText
+            primary={
+              menuLead && scoringLeadId === menuLead.id
+                ? "Recalculating score..."
+                : "Recalculate score"
+            }
+          />
+        </MenuItem>
+
+        <MenuItem disabled={!menuLead} onClick={handleGenerateFollowUp}>
+          <ListItemIcon>
+            <AutoAwesomeIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText primary="Generate follow-up" />
+        </MenuItem>
+      </Menu>
+
+      <FollowUpModal
+        open={Boolean(followUpLead)}
+        lead={followUpLead}
+        onClose={() => setFollowUpLead(null)}
       />
     </>
   );

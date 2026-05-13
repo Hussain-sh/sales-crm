@@ -64,6 +64,8 @@ const recalculateLeadScore = async(id) => {
             lead,
             interactions
         );
+    
+    aiResponse.priority_score = aiResponse.priority_score.toLowerCase();
     const updatedLead =
         await leadModel.updateLeadAIScore(
             id,

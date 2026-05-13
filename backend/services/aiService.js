@@ -6,33 +6,55 @@ const client = new OpenAI({
 });
 
 const calculateLeadScore = async(lead, interactions) => {
-    const formattedInteractions = interactions
-        .map((interaction) => {
-            return `- ${interaction.interaction_note}`;
-        })
-        .join('\n');
+   const daysSinceContact = lead.last_interaction_date
+        ? Math.floor((Date.now() - new Date(lead.last_interaction_date)) / (1000 * 60 * 60 * 24))
+        : 999;
+
+    const formattedInteractions = interactions.length > 0
+        ? interactions.map((i) => `- ${i.interaction_note}`).join('\n')
+        : 'No interactions yet';
 
     const prompt = `
-    You are an AI CRM assistant.
-
-    Analyze the lead and return ONLY valid JSON.
+    You are a strict B2B sales scoring assistant.
+    Your job is to score leads as High, Medium, or Low priority.
+    Most leads should be Medium. Be conservative with High.
 
     Lead Details:
-    Name: ${lead.name}
-    Company: ${lead.company}
-    Industry: ${lead.industry}
-    Deal Size: ${lead.deal_size}
-    Stage: ${lead.stage}
+    - Name: ${lead.name} at ${lead.company}
+    - Industry: ${lead.industry}
+    - Deal Size: $${lead.deal_size}
+    - Stage: ${lead.stage}
+    - Days Since Last Contact: ${daysSinceContact}
 
-    Interactions:
+    Recent Interactions:
     ${formattedInteractions}
 
-    Return response ONLY in this format:
+    Scoring Rules — follow exactly:
 
+    HIGH — must meet at least 2 of these 4:
+    1. Deal size is above 80,000
+    2. Stage is "Negotiation"
+    3. Days since last contact is between 3 and 8
+    4. Interactions mention: budget approved, contract, ready to sign, or decision made
+
+    MEDIUM — meets only 1 High criteria OR:
+    - Deal size between 20,000 and 80,000
+    - Stage is "Interested" or "Contacted" with some positive signals
+    - Interactions mention interest but no urgency or budget confirmation
+
+    LOW — meets none of the above OR any of these:
+    - No response, ghosting, or no interactions at all
+    - Stage is "New" with no outreach yet
+    - Deal size below 20,000
+    - Last contact was more than 14 days ago with no positive signals
+
+    When in doubt, score Medium not High.
+
+    Respond ONLY with this exact JSON, no other text:
     {
-    "priority_score": "high",
-    "priority_reason": "short reason",
-    "ai_focus_reason": "short reason"
+    "priority_score": "High",
+    "priority_reason": "one sentence, max 15 words",
+    "ai_focus_reason": "one sentence, why contact them today or not"
     }
     `;
 
