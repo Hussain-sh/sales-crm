@@ -9,17 +9,29 @@ const client = require('./services/aiService');
 
 const app = express();
 
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 8000;
+const HOST = '0.0.0.0';
+const allowedOrigins = [
+    process.env.CLIENT_URL,
+    ...(process.env.CLIENT_URLS
+        ? process.env.CLIENT_URLS.split(',').map((origin) => origin.trim())
+        : []),
+    'http://localhost:3000'
+].filter(Boolean);
 
 app.use(express.json());
 
 app.use(cors({
-    origin: [
-        process.env.CLIENT_URL,
-        'http://localhost:3000'
-    ],
+    origin: allowedOrigins,
     credentials: true
 }));
+
+app.get('/health', (req, res) => {
+    res.status(200).json({
+        success: true,
+        message: 'Backend is healthy'
+    });
+});
 
 const leadRoutes = require('./routes/leadRoutes');
 
@@ -31,6 +43,6 @@ app.use('/leads/:id/interactions', interactionRoutes);
 
 app.use(errorHandler);
 
-app.listen(PORT, () => {
+app.listen(PORT, HOST, () => {
     console.log(`Server listening on port: ${PORT}`);
 });
